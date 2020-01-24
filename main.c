@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <signal.h>
 #include <dirent.h>
 #include <stdbool.h>
+#include <pwd.h>
 
 // Prosystem
 #include "Bios.h"
@@ -302,6 +303,100 @@ void game_step()
     ProcessAudio((uint8_t*)sampleBuffer, length);
 }
 
+static const char* FileNameFromPath(const char* fullpath)
+{
+    // Find last slash
+    const char* ptr = strrchr(fullpath,'/');
+    if (!ptr)
+    {
+        ptr = fullpath;
+    }
+    else
+    {
+        ++ptr;
+    } 
+
+    return ptr;   
+}
+
+static char* PathCombine(const char* path, const char* filename)
+{
+    int len = strlen(path);
+    int total_len = len + strlen(filename);
+
+    char* result = NULL;
+
+    if (path[len-1] != '/')
+    {
+        ++total_len;
+        result = (char*)calloc(total_len + 1, 1);
+        strcpy(result, path);
+        strcat(result, "/");
+        strcat(result, filename);
+    }
+    else
+    {
+        result = (char*)calloc(total_len + 1, 1);
+        strcpy(result, path);
+        strcat(result, filename);
+    }
+    
+    return result;
+}
+
+static int LoadState(const char* saveName)
+{
+    FILE* file = fopen(saveName, "rb");
+	if (!file)
+		return -1;
+
+	fseek(file, 0, SEEK_END);
+	long size = ftell(file);
+	rewind(file);
+
+    if (size < 1) return -1;
+
+    void* ptr = malloc(size);
+    if (!ptr) abort();
+
+    size_t count = fread(ptr, 1, size, file);
+    if ((size_t)size != count)
+    {
+        free(ptr);
+        abort();
+    }
+
+    fclose(file);
+
+    prosystem_Load((const char *)ptr);
+    free(ptr);
+
+    return 0;
+}
+
+static void SaveState(const char* saveName)
+{
+    char buffer[1024 * 64];
+
+    int size = 0;
+    prosystem_Save(buffer, false, &size);
+    
+
+    FILE* file = fopen(saveName, "wb");
+	if (!file)
+    {
+		abort();
+    }
+
+    size_t count = fwrite(buffer, 1, size, file);
+    if (count != size)
+    {
+        abort();
+    }
+
+    fclose(file);
+}
+
 int main (int argc, char **argv)
 {
     display = go2_display_create();
@@ -326,6 +421,21 @@ int main (int argc, char **argv)
 
     const char* romfile = argv[1];
     game_init(romfile);
+
+
+    const char* fileName = FileNameFromPath(romfile);
+    
+    char* saveName = (char*)malloc(strlen(fileName) + 4 + 1);
+    strcpy(saveName, fileName);
+    strcat(saveName, ".sav");
+
+
+    struct passwd *pw = getpwuid(getuid());
+    const char *homedir = pw->pw_dir;
+
+    char* savePath = PathCombine(homedir, saveName);
+    printf("savePath='%s'\n", savePath);
+    LoadState(savePath);
 
 
     int totalFrames = 0;
@@ -366,6 +476,9 @@ int main (int argc, char **argv)
         Stopwatch_Reset();
 #endif
     }
+
+    SaveState(savePath);
+    free(savePath);
 
     // Clean up
     go2_input_destroy(input);
