@@ -367,5 +367,12 @@ int main (int argc, char **argv)
 #endif
     }
 
+    // Clean up
+    go2_input_destroy(input);
+    go2_audio_destroy(audio);
+    go2_surface_destroy(fbsurface);
+    go2_presenter_destroy(presenter);
+    go2_display_destroy(display);
+
     return 0;
 }
